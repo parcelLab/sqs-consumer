@@ -349,6 +349,14 @@ export class Consumer extends EventEmitter {
       }
     } catch (err) {
       this.emit('error', err, messages);
+
+      if (this.terminateVisibilityTimeout) {
+        try {
+          await this.terminateVisabilityTimeoutBatch(messages);
+        } catch (err) {
+          this.emit('error', err, messages);
+        }
+      }
     }
   }
 
