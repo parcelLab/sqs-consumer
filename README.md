@@ -1,22 +1,17 @@
 # sqs-consumer
 
-[![NPM downloads](https://img.shields.io/npm/dm/sqs-consumer.svg?style=flat)](https://npmjs.org/package/sqs-consumer)
-[![Build Status](https://travis-ci.org/bbc/sqs-consumer.svg)](https://travis-ci.org/bbc/sqs-consumer) 
-[![Code Climate](https://codeclimate.com/github/BBC/sqs-consumer/badges/gpa.svg)](https://codeclimate.com/github/BBC/sqs-consumer) 
-[![Test Coverage](https://codeclimate.com/github/BBC/sqs-consumer/badges/coverage.svg)](https://codeclimate.com/github/BBC/sqs-consumer)
-
-Build SQS-based applications without the boilerplate. Just define an async function that handles the SQS message processing.
+Build SQS-based applications without the boilerplate. Just define an async function that handles the SQS message processing. (Forked from bbc/sqs-consumer)
 
 ## Installation
 
 ```bash
-npm install sqs-consumer --save
+npm install @parcellab/sqs-consumer --save
 ```
 
 ## Usage
 
 ```js
-const { Consumer } = require('sqs-consumer');
+const { Consumer } = require('@parcellab/sqs-consumer');
 
 const app = Consumer.create({
   queueUrl: 'https://sqs.eu-west-1.amazonaws.com/account-id/queue-name',
@@ -86,6 +81,40 @@ app.on('timeout_error', (err) => {
 app.start();
 ```
 
+## Extra: handleMessageBatchControlled
+
+Since `handleMessageBatch` won't delete any of the messages from the queue if the handler failed, you can use this if you want more control of the process.  
+`handleMessageBatchControlled` works same as `handleMessageBatch` BUT you HAVE to return an Array of messages that should be deleted from the list. If no Array is returned, no messages will be removed!  
+Whit `handleMessageBatchControlled` you can deal with a batch of messages and then handle the failed ones with the option to delete the succeeded messages.
+
+### Implementation example
+
+```javascript
+const app = Consumer.create({
+  queueUrl: 'https://sqs.eu-west-1.amazonaws.com/account-id/queue-name',
+  sqs: new AWS.SQS(),
+  batchSize: 10,
+  handleMessageBatchControlled: async (messages) => {
+    let succeededMessages = await Promise.all(messages.map(doSomeAsyncWork))
+    .filter(msg => !!msg) // filter out all null/falsy
+    return succeededMessages // return array of messages (to delete from SQS)
+  },
+});
+
+// how you could handle the message batch:
+// -> this function should not throw Errors and return a message if succeeded
+// -> if this function will throw an Error, none of the messages will be deleted
+async function doSomeAsyncWork (message) {
+  try {
+    // do some stuff ...
+    return message // ... return the message if succeeded
+  } catch (err) {
+    console.log(err) // handle err ...
+    return null // ... return e.g. null if failed
+  }
+}
+```
+
 ## API
 
 ### `Consumer.create(options)`
@@ -98,6 +127,7 @@ Creates a new SQS consumer.
 * `region` - _String_ - The AWS region (default `eu-west-1`)
 * `handleMessage` - _Function_ - An `async` function (or function that returns a `Promise`) to be called whenever a message is received. Receives an SQS message object as it's first argument.
 * `handleMessageBatch` - _Function_ - An `async` function (or function that returns a `Promise`) to be called whenever a batch of messages is received. Similar to `handleMessage` but will receive the list of messages, not each message individually. **If both are set, `handleMessageBatch` overrides `handleMessage`**.
+* `handleMessageBatchControlled` - _Function_ - An `async` function (or function that returns a `Promise`) to be called whenever a batch of messages is received. Similar to `handleMessageBath` but the Promise HAS to return a list of messages that should be deleted from SQS. **If the Promise does not return a list of messages, `handleMessageBatch` won't delete anything from the queue!**.
 * `handleMessageTimeout` - _String_ - Time in ms to wait for `handleMessage` to process a message before timing out. Emits `timeout_error` on timeout. By default, if `handleMessage` times out, the unprocessed message returns to the end of the queue.
 * `attributeNames` - _Array_ - List of queue attributes to retrieve (i.e. `['All', 'ApproximateFirstReceiveTimestamp', 'ApproximateReceiveCount']`).
 * `messageAttributeNames` - _Array_ - List of message attributes to retrieve (i.e. `['name', 'address']`).
